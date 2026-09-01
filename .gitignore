@@ -1,0 +1,15 @@
+# Data is rebuilt by src/download_data.py + src/clean_data.py
+data/
+
+# Python
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+.venv/
+
+# Power BI working files (the final .pbix IS committed)
+*.pbix.tmp
+
+# OS
+.DS_Store
+Thumbs.db

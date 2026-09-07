@@ -185,16 +185,28 @@ def clean_population() -> pd.DataFrame:
     return annual
 
 
-def build_dim_date() -> pd.DataFrame:
+def build_dim_date(forecast_months: int = 12) -> pd.DataFrame:
     """Month-grain date dimension.
 
     ARDD publishes crash month but not the exact day, so the facts sit at
     month grain and the date dimension must too — a daily dimension would
     create a many-to-many join on date_key.
+
+    The dimension runs `forecast_months` past the last observed month so the
+    SARIMA forecast has date rows to join to. Without the extension every
+    forecast row maps to a blank date and the projection cannot be plotted
+    on a date axis at all. `has_actuals` separates the two regions.
     """
     cal = pd.read_csv(RAW / "calendar.csv")
     days = pd.to_datetime(cal["Date"], format="%d-%b-%y")
-    d = pd.DataFrame({"month_start": days.dt.to_period("M").dt.to_timestamp().unique()})
+    observed = days.dt.to_period("M").dt.to_timestamp()
+
+    months = pd.date_range(
+        observed.min(),
+        observed.max() + pd.DateOffset(months=forecast_months),
+        freq="MS",
+    )
+    d = pd.DataFrame({"month_start": months})
     d["year"] = d["month_start"].dt.year
     d["month"] = d["month_start"].dt.month
     d["month_name"] = d["month_start"].dt.strftime("%b")
@@ -203,6 +215,7 @@ def build_dim_date() -> pd.DataFrame:
     # Australian financial year runs July-June: FY2020 = Jul 2019 - Jun 2020.
     fy_end = d["year"] + (d["month"] >= 7).astype(int)
     d["financial_year"] = "FY" + fy_end.astype(str)
+    d["has_actuals"] = d["month_start"] <= observed.max()
     return d.sort_values("month_start").reset_index(drop=True)
 
 

@@ -12,35 +12,53 @@ Get data → Text/CSV, load all six files:
 |---|---|---|
 | `fact_fatalities` | one person killed | 55,360 |
 | `fact_crashes` | one fatal crash | 49,903 |
-| `dim_date` | one month | 418 |
+| `dim_date` | one day | 13,088 |
 | `dim_state` | one state/territory | 8 |
 | `fact_population` | state × year | 280 |
 | `forecast_monthly` | one forecast month | 12 |
 
-In Power Query, check the type of every date column (`month_start`,
+In Power Query, check the type of every date column (`date`, `month_start`,
 `crash_month`, `month`) is Date, and `date_key` columns are whole numbers.
 Nothing else needs transforming — that is the point of doing the cleaning in
 Python.
 
 ## 2. Model relationships
 
+`dim_date` is **daily and gapless**: Power BI refuses to mark a month-grain
+table as a date table ("dates in the date column cannot have gaps"), and the
+DAX time-intelligence functions assume a contiguous daily column. ARDD
+publishes no day-of-month, so every fact row is anchored to its month start
+and joins on that date. Many facts therefore land on the 1st of the month —
+correct at month grain, and the report never plots at day grain.
+
 Model view → create (all many-to-one, single direction, filtering from dim to
 fact):
 
 ```
-fact_fatalities[date_key]  →  dim_date[date_key]
-fact_crashes[date_key]     →  dim_date[date_key]
-fact_fatalities[state]     →  dim_state[state]
-fact_crashes[state]        →  dim_state[state]
-fact_population[state]     →  dim_state[state]
-forecast_monthly[month]    →  dim_date[month_start]
+fact_fatalities[crash_month]  →  dim_date[date]
+fact_crashes[crash_month]     →  dim_date[date]
+fact_fatalities[state]        →  dim_state[state]
+fact_crashes[state]           →  dim_state[state]
+fact_population[state]        →  dim_state[state]
+forecast_monthly[month]       →  dim_date[date]
 ```
+
+Do **not** join on `date_key`: in a daily dimension it repeats for every day of
+a month, so it cannot be the "one" side of a relationship. It stays in the
+model only as a convenient integer for slicing.
+
+Delete anything auto-detect adds beyond these six — in particular
+`fact_fatalities[crash_id]` ↔ `fact_crashes[crash_id]` (fact tables must not
+filter each other) and any `fact_population[year]` ↔ `dim_date[year]` link,
+which would break the per-capita measures.
 
 Then:
 
-- Mark `dim_date` as a date table (column `month_start`).
+- Mark `dim_date` as a date table (column `date`).
 - Hide `date_key`, `crash_id` and other join keys from report view.
 - Sort `dim_date[month_name]` by `dim_date[month]`.
+- Turn off Options → Current file → Data load → Auto date/time; the model has
+  its own date table and the hidden auto tables only add confusion.
 - Create the measures from [dax_measures.md](dax_measures.md) in a `_Measures` table.
 
 The population table deliberately has **no relationship to dim_date** — the

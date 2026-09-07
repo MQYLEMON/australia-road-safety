@@ -44,12 +44,13 @@ DIVIDE ( [Total Deaths], [Population] ) * 100000
 
 ## Time intelligence
 
-Month-grain facts mean the built-in time intelligence works off
-`dim_date[month_start]` (mark `dim_date` as a date table on this column).
+Time intelligence runs off `dim_date[date]`, the gapless daily column the
+table is marked as a date table on. Use `dim_date[month_start]` for grouping
+and axes, never as the argument to a time-intelligence function.
 
 ```dax
 Deaths PY =
-CALCULATE ( [Total Deaths], SAMEPERIODLASTYEAR ( dim_date[month_start] ) )
+CALCULATE ( [Total Deaths], SAMEPERIODLASTYEAR ( dim_date[date] ) )
 ```
 
 ```dax
@@ -61,7 +62,7 @@ DIVIDE ( [Total Deaths] - [Deaths PY], [Deaths PY] )
 Deaths Rolling 12M =
 CALCULATE (
     [Total Deaths],
-    DATESINPERIOD ( dim_date[month_start], MAX ( dim_date[month_start] ), -12, MONTH )
+    DATESINPERIOD ( dim_date[date], MAX ( dim_date[date] ), -12, MONTH )
 )
 ```
 
@@ -98,7 +99,9 @@ DIVIDE (
 ## Forecast overlay
 
 `forecast_monthly.csv` (from `02_modeling.ipynb`) relates to `dim_date` via its
-`month` column → `dim_date[month_start]`.
+`month` column → `dim_date[date]`. `dim_date` runs 12 months past the last
+observed month so those rows exist; `dim_date[has_actuals]` separates the
+observed region from the forecast horizon.
 
 ```dax
 Forecast Deaths = SUM ( forecast_monthly[forecast] )

@@ -108,8 +108,15 @@ def test_processed_fatalities_integrity():
 @needs_data
 def test_star_schema_keys_align():
     powerbi = PROCESSED / "powerbi"
-    dim_date = pd.read_csv(powerbi / "dim_date.csv")
-    fact = pd.read_csv(powerbi / "fact_fatalities.csv", low_memory=False)
+    dim_date = pd.read_csv(powerbi / "dim_date.csv", parse_dates=["date"])
+    fact = pd.read_csv(powerbi / "fact_fatalities.csv", parse_dates=["crash_month"],
+                       low_memory=False)
+    forecast = pd.read_csv(powerbi / "forecast_monthly.csv", parse_dates=["month"])
 
-    assert dim_date["date_key"].is_unique, "dim_date must be month grain"
-    assert fact["date_key"].isin(dim_date["date_key"]).all()
+    # Power BI can only mark a gapless daily column as a date table.
+    assert dim_date["date"].is_unique
+    gaps = dim_date["date"].sort_values().diff().dropna().unique()
+    assert list(gaps) == [pd.Timedelta(days=1)], "dim_date must have no gaps"
+
+    assert fact["crash_month"].isin(dim_date["date"]).all(), "unjoinable fact rows"
+    assert forecast["month"].isin(dim_date["date"]).all(), "forecast beyond dim_date"

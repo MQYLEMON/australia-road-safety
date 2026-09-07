@@ -186,37 +186,39 @@ def clean_population() -> pd.DataFrame:
 
 
 def build_dim_date(forecast_months: int = 12) -> pd.DataFrame:
-    """Month-grain date dimension.
+    """Daily date dimension.
 
-    ARDD publishes crash month but not the exact day, so the facts sit at
-    month grain and the date dimension must too — a daily dimension would
-    create a many-to-many join on date_key.
+    Every day is present with no gaps, which is what Power BI's "mark as date
+    table" requires and what the DAX time-intelligence functions assume. A
+    month-grain dimension (one row per month start) cannot be marked as a date
+    table at all, which is why this is daily even though the facts are not.
+
+    ARDD publishes the crash month but not the day, so each fact row is
+    anchored to its month start (`crash_month`) and joins to `date` here.
+    Many facts therefore land on the 1st of the month: correct at month grain,
+    and never plotted at day grain.
 
     The dimension runs `forecast_months` past the last observed month so the
-    SARIMA forecast has date rows to join to. Without the extension every
-    forecast row maps to a blank date and the projection cannot be plotted
-    on a date axis at all. `has_actuals` separates the two regions.
+    SARIMA forecast has date rows to join to; `has_actuals` separates the
+    observed region from the forecast horizon.
     """
     cal = pd.read_csv(RAW / "calendar.csv")
     days = pd.to_datetime(cal["Date"], format="%d-%b-%y")
-    observed = days.dt.to_period("M").dt.to_timestamp()
+    last_observed_month = days.dt.to_period("M").max()
+    horizon_end = (last_observed_month + forecast_months).end_time.normalize()
 
-    months = pd.date_range(
-        observed.min(),
-        observed.max() + pd.DateOffset(months=forecast_months),
-        freq="MS",
-    )
-    d = pd.DataFrame({"month_start": months})
-    d["year"] = d["month_start"].dt.year
-    d["month"] = d["month_start"].dt.month
-    d["month_name"] = d["month_start"].dt.strftime("%b")
-    d["quarter"] = "Q" + d["month_start"].dt.quarter.astype(str)
+    d = pd.DataFrame({"date": pd.date_range(days.min(), horizon_end, freq="D")})
+    d["year"] = d["date"].dt.year
+    d["month"] = d["date"].dt.month
+    d["month_name"] = d["date"].dt.strftime("%b")
+    d["month_start"] = d["date"].dt.to_period("M").dt.to_timestamp()
+    d["quarter"] = "Q" + d["date"].dt.quarter.astype(str)
     d["date_key"] = d["year"] * 100 + d["month"]
     # Australian financial year runs July-June: FY2020 = Jul 2019 - Jun 2020.
     fy_end = d["year"] + (d["month"] >= 7).astype(int)
     d["financial_year"] = "FY" + fy_end.astype(str)
-    d["has_actuals"] = d["month_start"] <= observed.max()
-    return d.sort_values("month_start").reset_index(drop=True)
+    d["has_actuals"] = d["month_start"] <= last_observed_month.to_timestamp()
+    return d.reset_index(drop=True)
 
 
 def build_dim_state(pop: pd.DataFrame) -> pd.DataFrame:

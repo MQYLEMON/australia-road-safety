@@ -82,7 +82,10 @@ def clean_speed_limit(s: pd.Series) -> tuple[pd.Series, pd.Series]:
     bins = [0, 40, 50, 60, 80, 100, np.inf]
     labels = ["40 or below", "41-50", "51-60", "61-80", "81-100", "Over 100"]
     zone = pd.cut(numeric, bins=bins, labels=labels, right=True).astype("string")
-    zone = zone.where(s != "<40", "40 or below")
+    # s.eq("<40") is NA for missing tokens, and where/mask treat NA as False,
+    # which silently bucketed "-9"/"Unspecified" as "40 or below". Fill the
+    # mask explicitly so only a literal "<40" lands in that bucket.
+    zone = zone.mask(s.eq("<40").fillna(False), "40 or below")
     return numeric, zone.fillna("Unknown")
 
 
@@ -104,7 +107,7 @@ def clean_common(df: pd.DataFrame) -> pd.DataFrame:
     out["month"] = df["Month"].astype(int)
     # Exact day is not published; anchor each crash to the first of its month.
     out["crash_month"] = pd.to_datetime(
-        dict(year=out["year"], month=out["month"], day=1)
+        {"year": out["year"], "month": out["month"], "day": 1}
     )
     out["date_key"] = out["year"] * 100 + out["month"]
     out["day_of_week"] = standardise_missing(df["Dayweek"])
@@ -129,7 +132,9 @@ def clean_common(df: pd.DataFrame) -> pd.DataFrame:
     out["sa4"] = standardise_missing(df["SA4 Name 2021"])
     out["lga"] = standardise_missing(df["National LGA Name 2021"])
     out["road_type"] = standardise_missing(df["National Road Type"]).str.title()
-    out["road_type"] = out["road_type"].replace({"National Or State Highway": "National or State Highway"})
+    out["road_type"] = out["road_type"].replace(
+        {"National Or State Highway": "National or State Highway"}
+    )
 
     out["christmas_period"] = df["Christmas Period"].str.strip().eq("Yes")
     out["easter_period"] = df["Easter Period"].str.strip().eq("Yes")

@@ -1,0 +1,18 @@
+# Explicit rule selection so CI results don't drift with ruff's defaults.
+# 120 rather than the default 88: the data.gov.au resource URLs in
+# download_data.py are ~110 characters and splitting them hurts readability.
+line-length = 120
+
+[lint]
+select = [
+    "E",   # pycodestyle errors
+    "F",   # pyflakes
+    "I",   # import sorting
+    "UP",  # pyupgrade
+    "B",   # bugbear
+    "C4",  # comprehensions
+]
+
+[lint.per-file-ignores]
+# conftest.py manipulates sys.path before imports by design.
+"tests/conftest.py" = ["E402"]

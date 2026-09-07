@@ -1,8 +1,11 @@
 # Australian Road Safety Analysis
 
+[![CI](https://github.com/MQYLEMON/australia-road-safety/actions/workflows/ci.yml/badge.svg)](https://github.com/MQYLEMON/australia-road-safety/actions/workflows/ci.yml)
+
 End-to-end analytics project on 35 years of Australian road fatality data:
-**Python data pipeline → statistical modeling → Power BI dashboard**, built
-entirely on open government data.
+**Python data pipeline → SQL analysis layer → statistical modeling → Power BI
+dashboard**, built entirely on open government data, with unit-tested cleaning
+code under CI.
 
 > **Headline findings**
 >
@@ -14,7 +17,12 @@ entirely on open government data.
 >    contrary to folklore, is **no deadlier per day** than the rest of the
 >    year. Given a fatal crash *does* happen at Christmas, however, the odds
 >    it kills more than one person are **~1.4× higher** (fuller cars).
-> 4. A SARIMA model projects **~1,200 deaths** for the 12 months after the
+> 4. COVID lockdowns barely moved the road toll: an interrupted-time-series
+>    counterfactual puts the cumulative effect over Mar 2020 – Dec 2021 at
+>    **≈ 0 deaths** (−21, 95% range −570 to +530) despite a historic drop in
+>    traffic — and the states that locked down hardest were *not* the ones
+>    that fell most.
+> 5. A SARIMA model projects **~1,200 deaths** for the 12 months after the
 >    data ends (Nov 2023 – Oct 2024), with a calibrated 95% band designed to
 >    flag months where the toll drifts above trend.
 
@@ -23,15 +31,22 @@ entirely on open government data.
 ## Project structure
 
 ```
-├── data/                  (git-ignored; rebuilt by the two scripts below)
+├── data/                  (git-ignored; rebuilt by the scripts below)
 │   ├── raw/               ARDD + ABS downloads, untouched
 │   └── processed/         cleaned tables + Power BI star schema
 ├── src/
 │   ├── download_data.py   fetch ARDD (data.gov.au) + ABS ERP (SDMX API)
-│   └── clean_data.py      cleaning, integrity checks, star-schema export
+│   ├── clean_data.py      cleaning, integrity checks, star-schema export
+│   ├── load_to_sqlite.py  load the star schema into SQLite
+│   └── run_sql_analysis.py  execute sql/analysis.sql and print results
+├── sql/
+│   └── analysis.sql       windowed SQL analyses (LAG, rolling frames, RANK, CTEs)
 ├── notebooks/
 │   ├── 01_eda.ipynb       exploratory analysis (executed, with narrative)
-│   └── 02_modeling.ipynb  SARIMA forecast + crash-severity classification
+│   ├── 02_modeling.ipynb  SARIMA forecast + crash-severity classification
+│   └── 03_covid_impact.ipynb  COVID interrupted-time-series counterfactual
+├── tests/                 pytest suite for the cleaning pipeline
+├── .github/workflows/     CI: ruff lint + unit tests on every push
 ├── powerbi/
 │   ├── build_guide.md     step-by-step dashboard assembly instructions
 │   └── dax_measures.md    full DAX measure library
@@ -44,7 +59,10 @@ entirely on open government data.
 pip install -r requirements.txt
 python src/download_data.py     # ~12 MB from data.gov.au + ABS API
 python src/clean_data.py        # cleaned tables + Power BI star schema
-jupyter notebook notebooks/     # run 01 then 02
+python src/load_to_sqlite.py    # optional: SQLite database for the SQL layer
+python src/run_sql_analysis.py  # optional: run the SQL analyses
+jupyter notebook notebooks/     # run 01, 02, then 03
+pytest tests/                   # unit + integration tests
 ```
 
 Then follow [powerbi/build_guide.md](powerbi/build_guide.md) to assemble the
@@ -69,16 +87,48 @@ ARDD publishes no day-of-month — state dimension, two fact tables, annual
 population fact joined via `TREATAS`). Per-capita rates use ABS 30-June
 Estimated Resident Population fetched live from the ABS Data API.
 
+## Testing and CI
+
+The cleaning logic is covered by a [pytest suite](tests/test_clean_data.py) that
+runs on synthetic frames (no data download needed) plus integration tests that
+skip themselves when `data/` has not been built. GitHub Actions runs `ruff` and
+the unit tests on every push.
+
+The tests earn their keep: they caught a real bug in the speed-zone bucketing
+where `Series.mask` treats a `pd.NA` comparison result as `False`, silently
+filing every unknown speed limit under "40 or below" and inflating that bucket
+roughly fourfold.
+
+## SQL layer
+
+`src/load_to_sqlite.py` loads the star schema into SQLite and
+[`sql/analysis.sql`](sql/analysis.sql) reproduces the core analyses in SQL —
+`LAG` for year-over-year change, a rolling 12-month window frame, `RANK` over a
+CTE join for per-capita state rankings, and conditional aggregation for the
+road-user and severity breakdowns. Results cross-check against the pandas
+figures in the notebooks.
+
 ## Modeling
 
 | Model | Task | Result |
 |---|---|---|
 | SARIMA (0,1,2)(1,1,1)₁₂ | 12-month national fatality forecast | MAPE **13.1%** on a 24-month holdout vs 13.9% seasonal-naive; the near-tie is itself a finding — the post-2015 plateau is close to a seasonal random walk, so the calibrated interval matters more than the point forecast |
-| Logistic regression / random forest | P(multi-fatality \| fatal crash) | ROC-AUC **0.70**, PR-AUC 0.18 vs 8.5% base rate; key associations: NT (OR 2.3), speed zones >80 km/h (OR 1.6–1.9), Christmas period (OR 1.4), bus/articulated-truck involvement |
+| Logistic regression / random forest | P(multi-fatality \| fatal crash) | ROC-AUC **0.70**, PR-AUC 0.18 vs 8.5% base rate; key associations: speed zones >100 km/h (OR 2.8), NT (OR 2.4), 81–100 km/h zones (OR 2.4), Christmas period (OR 1.4) |
+| SARIMA counterfactual | COVID interrupted time series | Trained to Feb 2020, projected forward: cumulative effect **−21 deaths** (95% range −570 to +530) over Mar 2020 – Dec 2021 — indistinguishable from zero |
 
-Both notebooks state their caveats explicitly: the severity model measures
+All three notebooks state their caveats explicitly: the severity model measures
 *associations among fatal crashes* (no exposure denominator, no occupancy or
-restraint data), not causal effects.
+restraint data), not causal effects, and the COVID counterfactual cannot
+separate "less driving" from "riskier driving" without VKT data.
+
+![COVID counterfactual](reports/figures/09_covid_counterfactual.png)
+
+The counterfactual above is the project's most counter-intuitive result: only
+the lockdown-wave months dip meaningfully below the no-pandemic projection, and
+the effect washes out entirely across 2020–21. State outcomes did not track
+lockdown stringency either — NSW and the ACT fell further than Victoria, while
+Queensland and Tasmania *rose* — a reminder that single-year state deltas on
+small counts are mostly noise.
 
 ## Data sources & licences
 

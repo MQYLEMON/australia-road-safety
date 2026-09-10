@@ -26,6 +26,33 @@ code under CI.
 >    data ends (Nov 2023 – Oct 2024), with a calibrated 95% band designed to
 >    flag months where the toll drifts above trend.
 
+## The dashboard
+
+[`RoadSafety.pbix`](RoadSafety.pbix) — a two-page Power BI report built on the
+star schema this pipeline exports. Assembly steps are in
+[powerbi/build_guide.md](powerbi/build_guide.md); every measure is documented in
+[powerbi/dax_measures.md](powerbi/dax_measures.md).
+
+**Page 1 — National overview**
+
+![Overview page](powerbi/screenshots/01-overview.png)
+
+KPI cards, the 35-year trend with absolute deaths on one axis and the
+per-capita rate on the other, and the SARIMA forecast plotted against actuals
+with its 95% band.
+
+**Page 2 — Where the risk actually is**
+
+![States page](powerbi/screenshots/02-states.png)
+
+The two bar charts rank the same eight jurisdictions in almost opposite orders:
+the Northern Territory is 1st by per-capita rate and 6th by raw count, New South
+Wales the reverse. The dashed reference line is a dynamic measure
+(`CALCULATE([Deaths per 100k], ALL(dim_state))`), so it tracks the national rate
+for whatever period the slicer selects rather than hard-coding a number that
+silently goes stale. The heat matrix shows the NT gap is structural, not a
+one-year artefact.
+
 ![National trend](reports/figures/01_national_trend.png)
 
 ## Project structure
@@ -49,7 +76,9 @@ code under CI.
 ├── .github/workflows/     CI: ruff lint + unit tests on every push
 ├── powerbi/
 │   ├── build_guide.md     step-by-step dashboard assembly instructions
-│   └── dax_measures.md    full DAX measure library
+│   ├── dax_measures.md    full DAX measure library
+│   └── screenshots/       dashboard page captures used in this README
+├── RoadSafety.pbix        the built two-page Power BI report
 └── reports/figures/       publication-ready charts from the notebooks
 ```
 
@@ -65,8 +94,9 @@ jupyter notebook notebooks/     # run 01, 02, then 03
 pytest tests/                   # unit + integration tests
 ```
 
-Then follow [powerbi/build_guide.md](powerbi/build_guide.md) to assemble the
-dashboard in Power BI Desktop.
+Open [`RoadSafety.pbix`](RoadSafety.pbix) in Power BI Desktop and refresh to
+point it at your freshly built tables, or rebuild the report from scratch with
+[powerbi/build_guide.md](powerbi/build_guide.md).
 
 ## Data engineering
 
@@ -82,9 +112,13 @@ The raw ARDD is realistically messy, and all handling is documented in
 - integrity checks asserted on every run: unique crash IDs, no orphan
   fatalities, fatality counts reconciling between the two files.
 
-The Power BI model is a proper **star schema** (month-grain date dimension —
-ARDD publishes no day-of-month — state dimension, two fact tables, annual
-population fact joined via `TREATAS`). Per-capita rates use ABS 30-June
+The Power BI model is a proper **star schema**: a gapless daily date dimension
+(Power BI refuses to mark a month-grain table as a date table, and the DAX
+time-intelligence functions assume contiguous days), a state dimension, two
+fact tables, and an annual population fact joined via `TREATAS` rather than a
+relationship — a year-grain relationship to the date table would silently break
+every per-capita measure at month grain. ARDD publishes no day-of-month, so
+facts are anchored to their month start. Per-capita rates use ABS 30-June
 Estimated Resident Population fetched live from the ABS Data API.
 
 ## Testing and CI

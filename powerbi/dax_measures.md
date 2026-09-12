@@ -38,6 +38,17 @@ Deaths per 100k =
 DIVIDE ( [Total Deaths], [Population] ) * 100000
 ```
 
+```dax
+National Deaths per 100k = CALCULATE ( [Deaths per 100k], ALL ( dim_state ) )
+```
+
+`ALL(dim_state)` drops the state filter while leaving the date filter intact,
+so this returns the national rate for whatever period is selected. Bind it to
+the reference line on the per-state bar chart (Analytics → constant line →
+`fx` → field value) rather than typing a number: a hard-coded 4.49 is only
+correct for 2018-2022 and starts disagreeing with the rest of the page the
+moment the slicer moves.
+
 > When more than one year is in context (e.g. a 5-year page filter), `Population`
 > sums across years, which keeps `Deaths per 100k` an *annualised average* —
 > exactly what the state comparison page wants.
@@ -85,6 +96,21 @@ DIVIDE (
 ```
 
 ```dax
+Truck Involvement % =
+DIVIDE (
+    CALCULATE (
+        [Total Crashes],
+        FILTER (
+            fact_crashes,
+            fact_crashes[heavy_rigid_truck_involved] = "Yes"
+                || fact_crashes[articulated_truck_involved] = "Yes"
+        )
+    ),
+    [Total Crashes]
+)
+```
+
+```dax
 Weekend Night Share % =
 DIVIDE (
     CALCULATE (
@@ -95,6 +121,20 @@ DIVIDE (
     [Total Deaths]
 )
 ```
+
+## Display units on cards
+
+Recent Power BI card visuals abbreviate large numbers ("55K") with no
+display-unit setting to turn it off, and they override the measure's own format
+string. Where an exact figure matters on a card, wrap it:
+
+```dax
+Total Deaths Label = FORMAT ( [Total Deaths], "#,0" )
+```
+
+The result is text, so it cannot be aggregated or sorted — use it only on cards
+and keep `[Total Deaths]` everywhere else. Chart axes and data labels do expose
+a display-unit setting, so they need no workaround.
 
 ## Forecast overlay
 

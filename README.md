@@ -22,13 +22,16 @@ code under CI.
 >    **≈ 0 deaths** (−21, 95% range −570 to +530) despite a historic drop in
 >    traffic — and the states that locked down hardest were *not* the ones
 >    that fell most.
-> 5. A SARIMA model projects **~1,200 deaths** for the 12 months after the
+> 5. Crash severity scales with the speed limit: crashes in 100+ km/h zones
+>    are **~4x more likely to kill more than one person** than those in 41–50
+>    zones (12.9% vs 3.1%).
+> 6. A SARIMA model projects **~1,200 deaths** for the 12 months after the
 >    data ends (Nov 2023 – Oct 2024), with a calibrated 95% band designed to
 >    flag months where the toll drifts above trend.
 
 ## The dashboard
 
-[`RoadSafety.pbix`](RoadSafety.pbix) — a two-page Power BI report built on the
+[`RoadSafety.pbix`](RoadSafety.pbix) — a four-page Power BI report built on the
 star schema this pipeline exports. Assembly steps are in
 [powerbi/build_guide.md](powerbi/build_guide.md); every measure is documented in
 [powerbi/dax_measures.md](powerbi/dax_measures.md).
@@ -52,6 +55,31 @@ Wales the reverse. The dashed reference line is a dynamic measure
 for whatever period the slicer selects rather than hard-coding a number that
 silently goes stale. The heat matrix shows the NT gap is structural, not a
 one-year artefact.
+
+**Page 3 — Who dies, and when**
+
+![People page](powerbi/screenshots/03-people.png)
+
+Men are roughly three in four deaths in every age band. The day × hour matrix
+is the page's point: between midnight and 3am, weekend nights average **3.4x
+the deaths of weekday nights**, and a second, smaller peak sits in the weekday
+afternoon commute. Day-of-week ordering comes from a small `dim_day`
+dimension — Power BI rejects sorting a column by one derived from it, so the
+sort key has to live in its own table.
+
+**Page 4 — What makes a crash fatal**
+
+![Crashes page](powerbi/screenshots/04-crashes.png)
+
+Fatal crashes concentrate in 81–100 km/h zones, and severity rises almost
+monotonically with the speed limit: the share of crashes killing more than one
+person climbs from **3.1% in 41–50 zones to 12.9% above 100 km/h**, a ~4x
+gradient that matches the odds ratios from the severity model. The
+decomposition tree drills that further by state and crash type.
+
+The truck-involvement line carries a deliberate caveat in its title: the jump
+from 9% to 15.5% between 2001 and 2002 is far too abrupt to be a real change in
+road use, and reads as a reporting or classification change in the source.
 
 ![National trend](reports/figures/01_national_trend.png)
 
